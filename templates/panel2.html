@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Tactical Cricket Control</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            background-color: #222;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            text-align: center;
+            user-select: none;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* --- THE STADIUM (WRAPPER) --- */
+        .interactive-zone {
+            position: relative;
+            width: 500px;
+            height: 500px;
+            margin: 20px auto;
+            background-color: #333;
+            border: 2px solid #555;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        /* --- THE FIELD (ROPE) --- */
+        .boundary-rope {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 350px;
+            height: 350px;
+            transform: translate(-50%, -50%);
+            background-color: #388E3C;
+            border: 2px dashed rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+        }
+
+        /* --- THE PITCH --- */
+        .pitch-marker {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 8px;
+            height: 40px;
+            background-color: #d2b48c;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+        }
+
+        /* --- SIX TARGET MARKER (RED) --- */
+        #shot-marker {
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            background-color: #ff4444;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            pointer-events: none;
+            z-index: 20;
+            box-shadow: 0 0 10px #ff0000;
+        }
+
+        /* --- FIELDER MARKER --- */
+        .fielder-marker {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background-color: #2196F3;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: bold;
+            color: white;
+            transition: background-color 0.2s, transform 0.1s, left 0.8s ease-out, top 0.8s ease-out;
+        }
+
+        .fielder-marker:hover {
+            transform: translate(-50%, -50%) scale(1.1);
+        }
+
+        .fielder-marker:active {
+            cursor: grabbing;
+        }
+
+        .fielder-marker.role-locked {
+            cursor: not-allowed;
+        }
+
+        .fielder-marker.role-locked:active {
+            cursor: not-allowed;
+        }
+
+        .fielder-marker.selected {
+            background-color: #4CAF50 !important;
+            border-color: #FFFF00;
+            box-shadow: 0 0 10px #4CAF50;
+            z-index: 15;
+        }
+
+        /* --- CONTROLS UI --- */
+        .controls-bar {
+            margin: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .config-bar {
+            margin: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            background: #2d2d2d;
+            padding: 12px;
+            border-radius: 6px;
+            max-width: 600px;
+            margin: 0 auto;
+            align-items: center;
+        }
+
+        .layouts-bar {
+            margin: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 6px;
+            max-width: 600px;
+            margin: 15px auto;
+        }
+
+        .info-panel {
+            background: #2d2d2d;
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        button {
+            padding: 10px 15px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        .btn-shot {
+            background: #ff4444;
+            color: white;
+        }
+
+        .btn-blue {
+            background: #2196F3;
+            color: white;
+        }
+
+        .btn-grey {
+            background: #555;
+            color: white;
+        }
+
+        .btn-layout {
+            background: #FF9800;
+            color: black;
+        }
+
+        .btn-layout:hover {
+            background: #F57C00;
+        }
+
+        .radio-group label {
+            margin-right: 10px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        input[type="radio"] {
+            margin-right: 5px;
+            cursor: pointer;
+        }
+
+        input[type="number"],
+        input[type="text"] {
+            padding: 8px;
+            border-radius: 4px;
+            border: none;
+            text-align: center;
+        }
+        /* --- SAVED SHOTS UI --- */
+.btn-green { background: #4CAF50; color: white; }
+.btn-green:hover { background: #388E3C; }
+
+.saved-shots-panel { margin-top: 15px; background: #222; padding: 10px; border-radius: 6px; text-align: left; max-height: 150px; overflow-y: auto; border: 1px solid #444; }
+.saved-shot-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 8px; background: #333; border-radius: 4px; border-left: 4px solid #ff4444;}
+.saved-shot-item label { cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 0.9em; flex-grow: 1;}
+.saved-shot-item input[type="checkbox"] { transform: scale(1.2); }
+    </style>
+</head>
+
+<body>
+
+    <h1>Tactical Broadcast Control</h1>
+
+    <div class="controls-bar">
+        <button class="btn-blue" onclick="drawAerialGap()">Show Aerial Gap</button>
+        <button class="btn-blue" onclick="send_command('triangle_gap', '')">Show Triangle Gap</button>
+        <button class="btn-bind" onclick="bindIndices()" style="background-color: #9C27B0; color: white;">BIND INDICES
+            (Sync All)</button>
+        <button class="btn-grey" onclick="resetFielders()">Reset Field</button>
+    </div>
+
+    <div class="config-bar">
+        <span style="font-weight: bold; color: #FF9800;">Batsman Handedness:</span>
+        <div class="radio-group">
+            <label><input type="radio" name="batsman_hand" value="RHB" checked onchange="onHandednessChange()"> Right
+                Hand (RHB)</label>
+            <label><input type="radio" name="batsman_hand" value="LHB" onchange="onHandednessChange()"> Left Hand
+                (LHB)</label>
+        </div>
+        <button class="btn-grey" style="margin-left: 20px; background-color: #607D8B;" onclick="triggerChangeSide()">Swap Bowling Side</button>
+    </div>
+    <div class="config-bar" style="background: #1e1e1e;">
+        <span style="font-weight: bold; color: #4CAF50;">Field Adjustments:</span>
+
+        <button id="btn-inner-circle" class="btn-grey" onclick="toggleInnerCircle()">Hide 30-Yard Ring</button>
+
+        <div style="display: flex; align-items: center; gap: 10px; border-left: 2px solid #555; padding-left: 15px;">
+            <label for="idle-slider" style="font-size: 0.9em;">Idle Movement Intensity:</label>
+            <input type="range" id="idle-slider" min="0" max="1" step="0.05" value="0.5"
+                oninput="updateIdleMovement(this.value)">
+            <span id="idle-val" style="font-family: monospace;">0.50</span>
+        </div>
+    </div>
+
+    <h3>Preset Fielding Layouts</h3>
+    <div class="layouts-bar">
+        <button class="btn-layout" onclick="applyLayout('powerplay_pace')">PP Pace (2 Out)</button>
+        <button class="btn-layout" onclick="applyLayout('powerplay_spin')">PP Spin (Pressure)</button>
+        <button class="btn-layout" onclick="applyLayout('standard_pace')">Standard Pace (5 Out)</button>
+        <button class="btn-layout" onclick="applyLayout('standard_spin')">Standard Spin (Attacking)</button>
+    </div>
+
+    <div class="interactive-zone" id="zone">
+        <div class="boundary-rope" id="rope">
+            <div class="pitch-marker"></div>
+        </div>
+        <div id="shot-marker"></div>
+    </div>
+
+    <div class="info-panel">
+        <div style="display: flex; gap: 10px; margin-bottom: 15px; padding: 10px; background: #1a1a1a; border-radius: 6px; align-items: center; justify-content: space-between; border-left: 4px solid #FF9800;">
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <label style="font-weight: bold; font-size: 0.9em; color: #aaa;">Match ID:</label>
+            <input type="text" id="match-id" value="INDvAUS_T20" style="width: 120px;" onchange="fetchShotsForMatch()">
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <label style="font-weight: bold; font-size: 0.9em; color: #aaa;">Innings:</label>
+            <input type="number" id="innings-num" value="1" min="1" max="4" style="width: 50px;" onchange="fetchShotsForMatch()">
+        </div>
+    </div>
+
+    <div style="margin-bottom: 15px; display: flex; gap: 8px; justify-content: center; align-items: center;">
+        <input type="text" id="ballNum" placeholder="Ball (e.g. 14.2)" style="width: 100px; border: 2px solid #2196F3; font-weight: bold;">
+        <input type="number" id="height" placeholder="Height (m)" style="width: 80px;">
+        <input type="text" id="displayText" placeholder="Overlay Text (Optional)" style="flex-grow: 1;">
+    </div>
+    
+    <div style="display: flex; justify-content: space-around; align-items: center; margin-bottom: 15px;">
+        <p style="margin: 0;">Aim: <span id="dist-display" style="font-weight:bold;">0%</span> @ <span id="angle-display" style="font-weight:bold;">0°</span></p>
+        <div>
+            <button class="btn-green" onclick="saveCurrentSix()">SAVE SHOT</button>
+            <button class="btn-shot" onclick="triggerSixTrajectory()">FIRE SHOT</button>
+        </div>
+    </div>
+    
+    <button onclick="send_command('hyperview', '')">Show HyperView</button>
+    <button onclick="send_command('helmet_view', '')">Show Helmet View</button>
+
+    <h4 style="margin: 15px 0 5px 0; color: #FF9800; text-align: left;">Saved Trajectories</h4>
+    <div id="saved-shots-list" class="saved-shots-panel">
+        <p style="color: #888; text-align: center; margin: 10px 0;">No saved shots yet. Click the field and save!</p>
+    </div>
+    <button class="btn-shot" style="width: 100%; margin-top: 10px; padding: 12px; font-size: 1.1em;" onclick="fireSelectedSixes()">FIRE SELECTED SIXES (BATCH)</button>
+
+    <div style="margin-top: 10px; font-size: 0.9em; color: #aaa;">
+        <p>Status: <span id="status-log" style="color:white;">Ready</span></p>
+    </div>
+</div>
+
+    <script>
+        const socket = io();
+
+        // --- DOM REFERENCES ---
+        const zone = document.getElementById('zone');
+        const rope = document.getElementById('rope');
+        const shotMarker = document.getElementById('shot-marker');
+        const statusLog = document.getElementById('status-log');
+
+        // --- STATE CONTROL ---
+        let fielders = [];
+        let fielderIdCounter = 0;
+        let currentShot = { angle: 0, distance: 0, active: false };
+        let currentActivePreset = null;
+
+        // --- CORRECTED BASELINE PRESETS (180 = Bowler / South, 0 = Keeper / North) ---
+        // All coordinates mapped relative to standard Right-Handed Batsman (RHB) stance view perspective
+        const fieldingPresets = {
+            powerplay_pace: [
+                { id: 0, angle: 180, distance: 0.12 }, // Bowler Locked (South Line)
+                { id: 1, angle: 0, distance: 0.22 }, // Keeper Locked (North Line)
+                { id: 2, angle: 70, distance: 0.3 },  // Cover
+                { id: 3, angle: 110, distance: 0.3 },  // Point
+                { id: 4, angle: 40, distance: 0.15 }, // Slip 1
+                { id: 5, angle: 25, distance: 0.18 }, // Slip 2
+                { id: 6, angle: 310, distance: 0.3 },  // Square Leg
+                { id: 7, angle: 250, distance: 0.35 }, // Mid Wicket
+                { id: 8, angle: 200, distance: 0.4 },  // Mid On
+                { id: 9, angle: 55, distance: 0.9 },  // Deep Third
+                { id: 10, angle: 290, distance: 0.9 }  // Deep Fine Leg
+            ],
+            powerplay_spin: [
+                { id: 0, angle: 180, distance: 0.12 }, // Bowler Locked
+                { id: 1, angle: 0, distance: 0.20 }, // Keeper Locked (Closer)
+                { id: 2, angle: 80, distance: 0.25 }, // Extra Cover
+                { id: 3, angle: 105, distance: 0.35 }, // Point
+                { id: 4, angle: 45, distance: 0.2 },  // Slip
+                { id: 5, angle: 240, distance: 0.3 },  // Short Mid-Wicket
+                { id: 6, angle: 300, distance: 0.25 }, // Backward Square Leg
+                { id: 7, angle: 135, distance: 0.3 },  // Silly Point
+                { id: 8, angle: 190, distance: 0.35 }, // Mid On
+                { id: 9, angle: 50, distance: 0.9 },  // Deep Third
+                { id: 10, angle: 270, distance: 0.9 }  // Deep Mid-Wicket
+            ],
+            standard_pace: [
+                { id: 0, angle: 180, distance: 0.12 }, // Bowler Locked
+                { id: 1, angle: 0, distance: 0.22 }, // Keeper Locked
+                { id: 2, angle: 100, distance: 0.35 }, // Cover
+                { id: 3, angle: 45, distance: 0.2 },  // Slip
+                { id: 4, angle: 290, distance: 0.4 },  // Square Leg
+                { id: 5, angle: 70, distance: 0.9 },  // Deep Point
+                { id: 6, angle: 120, distance: 0.9 },  // Deep Backward Point
+                { id: 7, angle: 160, distance: 0.9 },  // Long On
+                { id: 8, angle: 200, distance: 0.9 },  // Long Off
+                { id: 9, angle: 250, distance: 0.9 },  // Deep Mid Wicket
+                { id: 10, angle: 310, distance: 0.4 }  // Short Fine Leg
+            ],
+            standard_spin: [
+                { id: 0, angle: 180, distance: 0.12 }, // Bowler Locked
+                { id: 1, angle: 0, distance: 0.20 }, // Keeper Locked
+                { id: 2, angle: 80, distance: 0.3 },  // Cover
+                { id: 3, angle: 105, distance: 0.35 }, // Point
+                { id: 4, angle: 250, distance: 0.35 }, // Mid Wicket
+                { id: 5, angle: 40, distance: 0.2 },  // Slip
+                { id: 6, angle: 160, distance: 0.9 },  // Long On
+                { id: 7, angle: 200, distance: 0.9 },  // Long Off
+                { id: 8, angle: 60, distance: 0.9 },  // Deep Cover
+                { id: 9, angle: 260, distance: 0.9 },  // Deep Mid-Wicket
+                { id: 10, angle: 310, distance: 0.9 }  // Deep Square Leg
+            ]
+        };
+
+        function send_command(action, payload) {
+            socket.emit('send_command', { action: action, data: payload });
+        }
+
+        // --- INITIALIZATION ---
+        function initFielders() {
+            const centerX = 250, centerY = 250;
+
+            // Default flipped starting points: Bowler at bottom (180), Keeper at top (0)
+            const initialSetup = [
+                { angle: 180, dist: 20 }, // 0: Bowler
+                { angle: 0, dist: 35 },   // 1: Wicketkeeper
+                { angle: 40, dist: 100 }, { angle: 80, dist: 100 }, { angle: 120, dist: 100 },
+                { angle: 150, dist: 70 }, { angle: 210, dist: 70 }, { angle: 240, dist: 100 },
+                { angle: 280, dist: 100 }, { angle: 320, dist: 100 }, { angle: 350, dist: 80 }
+            ];
+
+            for (let i = 0; i < 11; i++) {
+                const setup = initialSetup[i];
+                const angleRad = (setup.angle - 90) * (Math.PI / 180);
+                const x = centerX + Math.cos(angleRad) * setup.dist;
+                const y = centerY + Math.sin(angleRad) * setup.dist;
+                createFielder(x, y);
+            }
+        }
+
+        function createFielder(x, y) {
+            const id = fielderIdCounter++;
+            const el = document.createElement('div');
+            el.className = 'fielder-marker';
+
+            if (id === 0) {
+                el.innerText = 'B';
+                el.style.backgroundColor = '#9C27B0'; // Purple Bowler
+                el.classList.add('role-locked');
+            } else if (id === 1) {
+                el.innerText = 'WK';
+                el.style.backgroundColor = '#E91E63'; // Pink Keeper
+                el.classList.add('role-locked');
+            } else {
+                el.innerText = id;
+            }
+
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+
+            zone.appendChild(el);
+            const fielderObj = { id: id, x: x, y: y, selected: false, element: el };
+            fielders.push(fielderObj);
+
+            addFielderInteractions(el, fielderObj);
+            el.addEventListener('click', (e) => e.stopPropagation());
+
+            return fielderObj;
+        }
+
+        function addFielderInteractions(el, obj) {
+            if (obj.id === 0 || obj.id === 1) return; // Keeper and Bowler remain locked
+
+            let isDragging = false;
+
+            // Unified handler function for moving (Mouse & Touch)
+            function handleMove(clientX, clientY) {
+                isDragging = true;
+                const rect = zone.getBoundingClientRect();
+
+                let newX = clientX - rect.left;
+                let newY = clientY - rect.top;
+
+                // Clamp positions to the 500x500 container boundaries
+                newX = Math.max(0, Math.min(newX, 500));
+                newY = Math.max(0, Math.min(newY, 500));
+
+                el.style.left = newX + 'px';
+                el.style.top = newY + 'px';
+
+                obj.x = newX;
+                obj.y = newY;
+            }
+
+            // --- DESKTOP MOUSE EVENTS ---
+            el.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                isDragging = false;
+
+                const onMouseMove = (moveEvent) => {
+                    handleMove(moveEvent.clientX, moveEvent.clientY);
+                };
+
+                const onMouseUp = () => {
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+
+                    if (isDragging) {
+                        sendFielderPosition(obj);
+                    } else {
+                        toggleFielderSelection(obj);
+                    }
+                };
+
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp);
+            });
+
+            // --- MOBILE & IPAD TOUCH EVENTS ---
+            el.addEventListener('touchstart', (e) => {
+                // Stop browser from scrolling or zooming while dragging a fielder
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+                isDragging = false;
+
+                const onTouchMove = (moveEvent) => {
+                    // grab the coordinates of the first finger touching the screen
+                    const touch = moveEvent.touches[0];
+                    handleMove(touch.clientX, touch.clientY);
+                };
+
+                const onTouchEnd = () => {
+                    window.removeEventListener('touchmove', onTouchMove);
+                    window.removeEventListener('touchend', onTouchEnd);
+
+                    if (isDragging) {
+                        sendFielderPosition(obj);
+                    } else {
+                        toggleFielderSelection(obj);
+                    }
+                };
+
+                window.addEventListener('touchmove', onTouchMove, { passive: false });
+                window.addEventListener('touchend', onTouchEnd);
+            }, { passive: false });
+        }
+
+        function toggleFielderSelection(obj) {
+            if (obj.id === 0 || obj.id === 1) return;
+
+            obj.selected = !obj.selected;
+            if (obj.selected) obj.element.classList.add('selected');
+            else obj.element.classList.remove('selected');
+
+            const action = obj.selected ? "fielder_select" : "fielder_deselect";
+            socket.emit('send_command', { action: action, fielderIndex: obj.id });
+        }
+
+        function sendFielderPosition(obj) {
+            const polar = getPolarData(obj.x, obj.y);
+            socket.emit('send_command', {
+                action: "fielder_move",
+                data: { index: obj.id, angle: polar.angle, distance: polar.distance }
+            });
+            statusLog.innerText = `Moved Fielder ${obj.id}`;
+        }
+
+        // --- PRESET APPLICATION SYSTEM WITH DYNAMIC HANDEDNESS INVERSION ---
+        function applyLayout(presetKey) {
+            if (presetKey) currentActivePreset = presetKey;
+            if (!currentActivePreset) return;
+
+            const layout = fieldingPresets[currentActivePreset];
+            if (!layout) return;
+
+            const centerX = 250;
+            const centerY = 250;
+            const ropeRadius = 175;
+
+            // Check checked state of DOM radio configurations
+            const selectedHand = document.querySelector('input[name="batsman_hand"]:checked').value;
+
+            layout.forEach(presetItem => {
+                const fielderObj = fielders.find(f => f.id === presetItem.id);
+
+                if (fielderObj) {
+                    let targetAngle = presetItem.itemAngle || presetItem.angle;
+
+                    // Apply horizontal inversion mirror processing if batsman is LHB
+                    if (selectedHand === "LHB") {
+                        // Mirror angle along vertical axis (360 - angle)
+                        // Keeps Bowler (180) and Keeper (0/360) exactly centered
+                        targetAngle = (360 - targetAngle) % 360;
+                    }
+
+                    // Convert processing coordinates safely back to Canvas grid spacing
+                    let angleRad = (targetAngle - 90) * (Math.PI / 180);
+                    let pixelDist = presetItem.distance * ropeRadius;
+
+                    let targetX = centerX + Math.cos(angleRad) * pixelDist;
+                    let targetY = centerY + Math.sin(angleRad) * pixelDist;
+
+                    targetX = Math.max(0, Math.min(targetX, 500));
+                    targetY = Math.max(0, Math.min(targetY, 500));
+
+                    fielderObj.x = targetX;
+                    fielderObj.y = targetY;
+                    fielderObj.element.style.left = targetX + 'px';
+                    fielderObj.element.style.top = targetY + 'px';
+                }
+            });
+
+            bindIndices();
+            statusLog.innerText = `Layout Applied: ${currentActivePreset.replace('_', ' ').toUpperCase()} (${selectedHand})`;
+        }
+
+        // Trigger dynamic layout rebuild immediately if user modifies stance mid-game
+        function onHandednessChange() {
+            const selectedHand = document.querySelector('input[name="batsman_hand"]:checked').value;
+    
+    // 2. Convert to integer: 0 for Right, 1 for Left
+    const handIntValue = (selectedHand === "RHB") ? 0 : 1;
+    
+    // 3. Emit the integer command to your Python/Unity backend
+    send_command('set_handedness', handIntValue);
+    
+    // 4. Update the UI
+    if (currentActivePreset) {
+        applyLayout(); 
+    } else {
+        statusLog.innerText = `Handedness set to ${selectedHand}. Select a layout template to render.`;
+    }
+        }
+
+        // --- SHOT (SIX) LOGIC ---
+        zone.addEventListener('click', (e) => {
+            const rect = zone.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            shotMarker.style.left = clickX + 'px';
+            shotMarker.style.top = clickY + 'px';
+            shotMarker.style.display = 'block';
+
+            const polar = getPolarData(clickX, clickY);
+
+            document.getElementById('dist-display').innerText = (polar.distance * 100).toFixed(0) + '%';
+            document.getElementById('angle-display').innerText = polar.angle.toFixed(0) + '°';
+
+            currentShot = { ...polar, active: true };
+        });
+
+        function triggerSixTrajectory() {
+            if (!currentShot.active) {
+                alert("Click the ground to aim first.");
+                return;
+            }
+
+            const hInput = document.getElementById("height").value;
+            const tInput = document.getElementById("displayText").value;
+
+            const payload = {
+                action: "hit_six",
+                data: [{
+                    resultId: 1,
+                    height: Number(hInput) ? hInput : 0,
+                    pos_x: currentShot.angle,
+                    pos_y: currentShot.distance,
+                    bowler_name: "Denis Lilie",
+                    batsman_name: "Don Bradman",
+                    total_runs: 6,
+                    over_number: 1.2,
+                    ball_number: 1.2
+                }],
+                text: tInput
+            };
+            socket.emit('send_command', payload);
+            console.log("Shot Fired:", payload);
+        }
+
+        // --- HELPER: MATH ---
+        function getPolarData(x, y) {
+            const centerX = 250;
+            const centerY = 250;
+            const dx = x - centerX;
+            const dy = y - centerY;
+
+            let angleRad = Math.atan2(dy, dx);
+            let angleDeg = angleRad * (180 / Math.PI) + 90;
+            if (angleDeg < 0) angleDeg += 360;
+
+            const pixelDist = Math.sqrt(dx * dx + dy * dy);
+            const ropeRadius = 175;
+            const normalizedDist = pixelDist / ropeRadius;
+
+            return { angle: angleDeg, distance: normalizedDist };
+        }
+
+        function bindIndices() {
+            let allFieldersData = [];
+            fielders.forEach(f => {
+                let polar = getPolarData(f.x, f.y);
+                allFieldersData.push({
+                    fielderIndex: f.id,
+                    angle: polar.angle,
+                    distance: polar.distance
+                });
+            });
+
+            const payload = { action: "bind_fielders", data: allFieldersData };
+            socket.emit('send_command', payload);
+            statusLog.innerText = `Bound ${allFieldersData.length} fielders to Unity!`;
+        }
+
+        function resetFielders() {
+            let deselectedCount = 0;
+            fielders.forEach(f => {
+                if (f.selected) {
+                    f.selected = false;
+                    f.element.classList.remove('selected');
+                    deselectedCount++;
+                }
+            });
+            send_command("reset", "");
+        }
+        // --- NEW ENVIRONMENT CONTROLS ---
+
+        let innerCircleVisible = true;
+
+        function toggleInnerCircle() {
+            innerCircleVisible = !innerCircleVisible;
+
+            // Update Button UI
+            const btn = document.getElementById('btn-inner-circle');
+            btn.innerText = innerCircleVisible ? "Hide 30-Yard Ring" : "Show 30-Yard Ring";
+
+            // Send 1 (visible) or 0 (hidden) to Unity
+            send_command("toggle_inner_circle", innerCircleVisible ? 1 : 0);
+            statusLog.innerText = `30-Yard Ring ${innerCircleVisible ? 'Visible' : 'Hidden'}`;
+        }
+
+        function updateIdleMovement(val) {
+            // Update the text number next to the slider
+            document.getElementById('idle-val').innerText = parseFloat(val).toFixed(2);
+
+            // Send the float value directly to Unity
+            send_command("set_idle_movement", parseFloat(val));
+        }
+        socket.on('update_fielders', function (response) {
+            const fieldersData = response.fielders;
+            const mapWidth = zone.clientWidth;
+            const mapHeight = zone.clientHeight;
+            fieldersData.forEach(incomingData => {
+                const fielderObject = fielders[incomingData.id];
+                if (fielderObject) {
+                    const fielderElement = fielderObject.element;
+                    const pixelX = incomingData.x * mapWidth;
+                    const pixelY = incomingData.y * mapHeight;
+                    if (fielderElement) {
+                        fielderElement.style.left = pixelX + 'px';
+                        fielderElement.style.top = pixelY + 'px';
+                        fielderObject.x = pixelX;
+                        fielderObject.y = pixelY;
+                    }
+                }
+            });
+        });
+
+        initFielders();
+
+        function drawAerialGap() {
+            let selectedFielders = fielders.filter(f => f.selected);
+            
+            // Check for at least 2
+            if (selectedFielders.length < 2) {
+                alert("Please select at least 2 fielders to visualize an aerial corridor.");
+                return;
+            }
+
+            // Sort the fielders visually from Left to Right (based on X coordinate).
+            // This ensures a clean, continuous defensive wall without lines crossing over each other!
+            selectedFielders.sort((a, b) => a.x - b.x);
+
+            const fielderIds = selectedFielders.map(f => f.id);
+            // Send command to Unity
+            send_command('aerial_gap', fielderIds);
+            statusLog.innerText = `Displaying aerial wall between ${fielderIds.length} fielders`;
+}
+// --- DATABASE-BACKED SAVED SHOTS LOGIC ---
+let savedSixes = [];
+
+// Helper to get current match context from UI
+function getMatchContext() {
+    return {
+        match_id: document.getElementById('match-id').value,
+        innings_number: parseInt(document.getElementById('innings-num').value)
+    };
+}
+
+window.onload = () => {
+    // 1. Check if the browser remembers a previous session
+    const savedMatch = localStorage.getItem('broadcast_match_id');
+    const savedInnings = localStorage.getItem('broadcast_innings_num');
+
+    // 2. If memory exists, update the HTML input boxes before fetching
+    if (savedMatch) document.getElementById('match-id').value = savedMatch;
+    if (savedInnings) document.getElementById('innings-num').value = savedInnings;
+
+    // 3. Fetch the shots using the newly restored inputs
+    fetchShotsForMatch();
+};
+
+function fetchShotsForMatch() {
+    const context = getMatchContext();
+    
+    // Save the current context to the browser's memory
+    localStorage.setItem('broadcast_match_id', context.match_id);
+    localStorage.setItem('broadcast_innings_num', context.innings_number);
+
+    statusLog.innerText = `Loading shots for ${context.match_id} (Inn ${context.innings_number})...`;
+    savedSixes = []; // Clear current UI list
+    renderSavedSixes();
+    
+    // Ask the Flask backend for the data
+    socket.emit('request_shots', context);
+}
+
+// 2. Listen for the database syncing back to the UI
+socket.on('update_saved_shots', function(dbShots) {
+    // Preserve the checked/selected state of any currently loaded shots
+    const oldSelections = new Set(savedSixes.filter(s => s.selected).map(s => s.id));
+    
+    savedSixes = dbShots.map(shot => ({
+        ...shot,
+        selected: oldSelections.has(shot.id) // Re-apply checkbox state if it existed
+    }));
+    
+    renderSavedSixes();
+});
+
+// 3. Send new shot to the Python backend to be saved in SQLite
+function saveCurrentSix() {
+    if (!currentShot.active) {
+        alert("Click the ground to aim first.");
+        return;
+    }
+
+    const context = getMatchContext();
+    const bInput = document.getElementById("ballNum").value;
+    const hInput = document.getElementById("height").value;
+    const tInput = document.getElementById("displayText").value;
+
+    if (!bInput) {
+        alert("Please enter a Ball Number (e.g., 14.2) before saving.");
+        return;
+    }
+
+    const payload = {
+        match_id: context.match_id,
+        innings_number: context.innings_number,
+        ball_number: bInput, // NEW
+        angle: currentShot.angle,
+        distance: currentShot.distance,
+        height: Number(hInput) ? Number(hInput) : 0,
+        text: tInput
+    };
+
+    socket.emit('save_shot', payload);
+}
+
+// 4. Render the UI
+function renderSavedSixes() {
+    const container = document.getElementById("saved-shots-list");
+    
+    if (savedSixes.length === 0) {
+        container.innerHTML = '<p style="color: #888; text-align: center; margin: 10px 0;">No saved shots yet for this innings.</p>';
+        return;
+    }
+
+    container.innerHTML = ''; 
+
+    savedSixes.forEach(shot => {
+        const div = document.createElement("div");
+        div.className = "saved-shot-item";
+        
+        const label = document.createElement("label");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = shot.selected;
+        checkbox.onchange = (e) => { shot.selected = e.target.checked; };
+        
+        const textSpan = document.createElement("span");
+        // NEW: Formatted to highly emphasize the Ball Number
+        textSpan.innerHTML = `<strong style="color:#2196F3;">Ball ${shot.ball_number}</strong> | ${(shot.distance * 100).toFixed(0)}% @ ${shot.angle.toFixed(0)}°`;
+        
+        label.appendChild(checkbox);
+        label.appendChild(textSpan);
+        
+        const delBtn = document.createElement("button");
+        delBtn.innerText = "✖";
+        delBtn.style.padding = "4px 8px";
+        delBtn.style.background = "transparent";
+        delBtn.style.border = "1px solid #888";
+        delBtn.style.color = "#fff";
+        delBtn.style.borderRadius = "4px";
+        delBtn.onmouseover = () => delBtn.style.background = "#d32f2f";
+        delBtn.onmouseout = () => delBtn.style.background = "transparent";
+        
+        delBtn.onclick = () => {
+            const context = getMatchContext();
+            socket.emit('delete_shot', {
+                shot_id: shot.id,
+                match_id: context.match_id,
+                innings_number: context.innings_number
+            });
+        };
+
+        div.appendChild(label);
+        div.appendChild(delBtn);
+        container.appendChild(div);
+    });
+}
+
+// 6. Fire the selected shots (Unchanged from before)
+function fireSelectedSixes() {
+    const activeShots = savedSixes.filter(s => s.selected);
+    
+    if (activeShots.length === 0) {
+        alert("Select at least one saved shot from the list to fire.");
+        return;
+    }
+
+    const payloadData = activeShots.map((shot, index) => {
+        return {
+            resultId: index + 1,
+            height: shot.height,
+            pos_x: shot.angle,
+            pos_y: shot.distance,
+            bowler_name: "Denis Lilie", // You can hook these up to UI inputs later too!
+            batsman_name: "Don Bradman",
+            total_runs: 6,
+            
+            // NEW: Send the exact ball number to Unity!
+            // parseFloat converts "14.2" into a raw number for Unity if needed
+            over_number: parseFloat(shot.ball_number) || 0, 
+            ball_number: parseFloat(shot.ball_number) || 0
+        };
+    });
+
+    const combinedText = activeShots.map(s => s.text).filter(t => t !== "").join(" | ");
+
+    const payload = {
+        action: "resix",
+        data: payloadData,
+        text: combinedText
+    };
+
+    socket.emit('send_command', payload);
+    console.log("Fired Batch Shots:", payload);
+    statusLog.innerText = `Fired ${activeShots.length} trajectories simultaneously!`;
+}
+
+// --- NEW: CHANGE BOWLING SIDE ---
+function triggerChangeSide() {
+    // Emits the command to the Flask server, which forwards it to Unity
+    // Sending an empty string or '0' as the payload since it acts as a simple trigger
+    send_command('change_side', ''); 
+    
+    // Update the UI log
+    statusLog.innerText = `Command Sent: Swapped Bowling Side/End`;
+}
+    </script>
+</body>
+
+</html>
