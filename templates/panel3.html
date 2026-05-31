@@ -61,47 +61,29 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         }
 
-        /* --- THE STADIUM (WRAPPER) --- */
         .interactive-zone {
             position: relative;
             width: 500px;
             height: 500px;
-            background-color: #333;
+            
+            /* NEW: Image Background */
+            background-image: url('/static/stadium.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            
             border: 2px solid #555;
             overflow: hidden;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
             border-radius: 8px;
             margin-bottom: 20px;
+            cursor: crosshair; /* Changes cursor to a target for aiming */
         }
 
-        /* --- THE FIELD (ROPE) --- */
-        .boundary-rope {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 350px;
-            height: 350px;
-            transform: translate(-50%, -50%);
-            background-color: #388E3C;
-            border: 2px dashed rgba(255, 255, 255, 0.6);
-            border-radius: 50%;
-        }
-
-        .pitch-marker {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 8px;
-            height: 40px;
-            background-color: #d2b48c;
-            transform: translate(-50%, -50%);
-            z-index: 1;
-        }
-
+        /* --- SIX TARGET MARKER (RED) --- */
         #shot-marker {
             position: absolute;
-            width: 14px;
-            height: 14px;
+            width: 14px; height: 14px;
             background-color: #ff4444;
             border: 2px solid white;
             border-radius: 50%;
@@ -425,9 +407,7 @@ kbd {
 
             <!-- The Radar Map (Centered) -->
             <div class="interactive-zone" id="zone">
-                <div class="boundary-rope" id="rope">
-                    <div class="pitch-marker"></div>
-                </div>
+                <!-- The background image now handles the stadium visuals -->
                 <div id="shot-marker"></div>
             </div>
 
@@ -487,7 +467,7 @@ kbd {
         const socket = io();
 
         // --- DOM REFERENCES ---
-        const zone = document.getElementById('zone');
+        //const zone = document.getElementById('zone');
         const rope = document.getElementById('rope');
         const shotMarker = document.getElementById('shot-marker');
         const statusLog = document.getElementById('status-log');
@@ -775,23 +755,52 @@ kbd {
             }
         }
 
-        // --- SHOT (SIX) LOGIC ---
-        zone.addEventListener('click', (e) => {
-            const rect = zone.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const clickY = e.clientY - rect.top;
+        // --- MAP CLICK / AIM LOGIC ---
+        // --- NEW LOGIC: CARTESIAN IMAGE MAPPING ---
+const zone = document.getElementById("zone");
+const marker = document.getElementById("shot-marker");
 
-            shotMarker.style.left = clickX + 'px';
-            shotMarker.style.top = clickY + 'px';
-            shotMarker.style.display = 'block';
+zone.addEventListener("click", function(event) {
+    if (event.target.classList.contains("fielder-marker")) return;
+    
+    const rect = zone.getBoundingClientRect();
+    
+    // 1. Raw Pixel Click relative to the top-left of the image
+    const clickX = event.clientX - rect.left;
+    const clickY = event.clientY - rect.top;
 
-            const polar = getPolarData(clickX, clickY);
+    // 2. Convert to Cartesian Coordinates (Center of image is 0,0)
+    // We invert Y so that Top (North) is positive, Bottom (South) is negative
+    const cartesianX = clickX - (rect.width / 2);
+    const cartesianY = (rect.height / 2) - clickY;
 
-            document.getElementById('dist-display').innerText = (polar.distance * 100).toFixed(0) + '%';
-            document.getElementById('angle-display').innerText = polar.angle.toFixed(0) + '°';
+    // 3. Normalize coordinates from -1.0 to 1.0 based on image bounds
+    const normX = cartesianX / (rect.width / 2);
+    const normY = cartesianY / (rect.height / 2);
 
-            currentShot = { ...polar, active: true };
-        });
+    // 4. Derive pure mathematical Angle from the X/Y vectors
+    // Math.atan2 gives standard angle; we convert it to a Cricket Compass (0°=North, 90°=East)
+    let rawAngle = Math.atan2(cartesianY, cartesianX) * (180 / Math.PI);
+    let compassAngle = 90 - rawAngle;
+    if (compassAngle < 0) compassAngle += 360;
+
+    // 5. Distance is the magnitude of the normalized vector
+    // 1.0 (100%) = exactly touching the flat edge of the image.
+    // > 1.0 = clicking into the corners of the square image.
+    const magnitude = Math.sqrt(normX * normX + normY * normY);
+
+    // Store for Unity payload
+    currentShot = { active: true, angle: compassAngle, distance: magnitude };
+    
+    // Visual Marker Update
+    marker.style.left = `${clickX}px`;
+    marker.style.top = `${clickY}px`;
+    marker.style.display = 'block';
+
+    // Update UI Text
+    document.getElementById("dist-display").innerText = `${(magnitude * 100).toFixed(0)}%`;
+    document.getElementById("angle-display").innerText = `${compassAngle.toFixed(0)}°`;
+});
 
         function triggerSixTrajectory() {
             if (!currentShot.active) {
