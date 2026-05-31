@@ -61,41 +61,59 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         }
 
-        /* --- THE STADIUM (WRAPPER) --- */
+        /* --- THE STADIUM (EXPANDED TO 600px) --- */
         .interactive-zone {
             position: relative;
-            width: 500px;
-            height: 500px;
-            background-color: #333;
+            
+            /* UPDATED: Larger clickable canvas */
+            width: 600px;
+            height: 600px; 
+            
+            background-color: #2c3e24; 
             border: 2px solid #555;
             overflow: hidden;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
             border-radius: 8px;
             margin-bottom: 20px;
+            cursor: crosshair;
         }
 
-        /* --- THE FIELD (ROPE) --- */
+        /* --- THE FIELD (ROPE REMAINS THE SAME) --- */
         .boundary-rope {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 350px;
-            height: 350px;
+            top: 50%; left: 50%;
+            width: 350px; height: 350px; /* Do not change this! */
             transform: translate(-50%, -50%);
-            background-color: #388E3C;
-            border: 2px dashed rgba(255, 255, 255, 0.6);
+            background-color: #388E3C; 
+            border: 2px dashed rgba(255, 255, 255, 0.8);
             border-radius: 50%;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.3); 
         }
 
+        /* --- TIER 2 STANDS (PUSHED FURTHER OUT) --- */
+        .tier2-circle {
+            position: absolute;
+            top: 50%; left: 50%;
+            
+            /* INCREASED: Now 550px (was 500px) */
+            width: 550px; height: 550px; 
+            
+            transform: translate(-50%, -50%);
+            border: 2px dashed rgba(255, 152, 0, 0.7); 
+            border-radius: 50%;
+            pointer-events: none; 
+            z-index: 5;
+        }
+
+        /* --- THE PITCH --- */
         .pitch-marker {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 8px;
-            height: 40px;
+            top: 50%; left: 50%;
+            width: 10px; height: 46px;
             background-color: #d2b48c;
             transform: translate(-50%, -50%);
-            z-index: 1;
+            border: 1px solid #8b4513;
+            z-index: 10;
         }
 
         #shot-marker {
@@ -425,6 +443,7 @@ kbd {
 
             <!-- The Radar Map (Centered) -->
             <div class="interactive-zone" id="zone">
+                <div class="tier2-circle"></div>
                 <div class="boundary-rope" id="rope">
                     <div class="pitch-marker"></div>
                 </div>
@@ -776,21 +795,45 @@ kbd {
         }
 
         // --- SHOT (SIX) LOGIC ---
-        zone.addEventListener('click', (e) => {
+        const marker = document.getElementById("shot-marker");
+        
+        // Your CSS .boundary-rope is 350px wide. That means the radius is 175px.
+        const BOUNDARY_RADIUS_PX = 175; 
+
+        zone.addEventListener("click", function(event) {
+            if (event.target.classList.contains("fielder-marker")) return;
+            
             const rect = zone.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const clickY = e.clientY - rect.top;
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
 
-            shotMarker.style.left = clickX + 'px';
-            shotMarker.style.top = clickY + 'px';
-            shotMarker.style.display = 'block';
+            const cx = rect.width / 2;
+            const cy = rect.height / 2;
+            const dx = x - cx;
+            const dy = y - cy;
 
-            const polar = getPolarData(clickX, clickY);
+            // 1. Calculate raw pixel distance from center
+            const rawDistPx = Math.sqrt(dx * dx + dy * dy);
+            
+            // 2. Normalize against the exact radius of the CSS boundary rope
+            let normalizedDist = rawDistPx / BOUNDARY_RADIUS_PX;
+            
+            // UPDATED: Cap it at 2.0 (200%) instead of 1.5, allowing for absolutely massive shots
+            // into the newly expanded dark green corners!
+            normalizedDist = Math.min(2.0, normalizedDist);
 
-            document.getElementById('dist-display').innerText = (polar.distance * 100).toFixed(0) + '%';
-            document.getElementById('angle-display').innerText = polar.angle.toFixed(0) + '°';
+            // 3. Calculate Angle
+            let angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+            if (angle < 0) angle += 360;
 
-            currentShot = { ...polar, active: true };
+            currentShot = { active: true, angle: angle, distance: normalizedDist };
+            
+            marker.style.left = `${x}px`;
+            marker.style.top = `${y}px`;
+            marker.style.display = 'block';
+
+            document.getElementById("dist-display").innerText = `${(normalizedDist * 100).toFixed(0)}%`;
+            document.getElementById("angle-display").innerText = `${angle.toFixed(0)}°`;
         });
 
         function triggerSixTrajectory() {
